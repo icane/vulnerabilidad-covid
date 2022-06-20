@@ -1,0 +1,2 @@
+# vulnerabilidad-covid
+Vulnerabilidad COVID
