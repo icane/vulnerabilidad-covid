@@ -1,0 +1,440 @@
+---
+title: "Estudio Índice Privación Vulderabilidad_COVID"
+author: "Francisco Parra"
+date: "7 de agosto de 2018"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+# Introducción
+
+Este estudio tiene como objetivo obtener un indicador de privación en Cantabria con el obtejerivo de valorar la incidencicia del COVID en relación con la vulnerabilidad. El estudio es fruto de la participación del Instituto Cantabro de Estadística (ICANE) y el observatorio de salud publica de Canatabria en el proyecto «Vulderabilidad-COVID".
+
+
+El indicador tiene un precedente en el Indicador Multidimensional de Privación que este mismo equipo elaboró para evaluar la relación entre la privación y la mortalidad en el marco del proyecto MEDEA III. Aquel indicador además de la información censal, incluía otra información socioeconómica sobre vulnerabilidad (Renta Básica de Insercción y Pensiones no contributivas). En este indicador esta información se ha sustituido por el Porcentaje de población con ingresos por unidad de consumo por debajo de
+5.000 euros al año (datos de 2015), procedente del Atlas de la Distribución de la Renta de los Hogares del INE.
+
+
+# Lectura de indicadores elementales
+
+```{r}
+indicadores <- read.csv("/cloud/project/Datos/Parciales.csv",header=TRUE,sep = ";",dec=",")
+indicadores2 <-
+read.csv("/cloud/project/Datos/Parciales2.csv",header=TRUE,sep = ";",dec=",")
+Vivienda=read.csv("/cloud/project/Datos/vivienda.csv",header=TRUE,sep = ";",dec=",")
+#Vivienda=Vivienda[1:144,]
+Demo <-
+read.csv("/cloud/project/Datos/Indicador_SOCIODEMO.csv",header=TRUE,sep = ";",dec=",")
+renta_pobr=read.csv("/cloud/project/Datos/tasa_pobreza.csv",header=TRUE,sep = ";",dec=",")
+
+```
+
+# Cartografia
+
+Se utiliza la cartagrafía de Cantabria a nivel de secciones censales del 2011.
+
+```{r}
+library(maptools)
+library(rgdal)
+library(RColorBrewer)
+library(Hmisc)
+Carto<-rgdal::readOGR("secc_2011_cantabria.shp") 
+plot(Carto, axes=T)
+```
+
+
+# Índice de privación compuesto de Cantabria
+
+La construcción de un indicador se suele basar en 3 fases: 
+
+a) selección de los indicadores o variables a incluir; 
+
+b) definición de las dimensiones conceptuales o dominios, medidos por uno o más indicadores, 
+
+y c) definición del índice, constituido por varias dimensiones.
+
+La experiencia acumulada en la elaboración de indicadores a niveles censales en España, y la disponibilidad de estadísticos a estos niveles para la Cantabria a nivel de sección Censal, determina que en Cantabria optemos por construir un indicador a partir de los siguientes indicadores individuales y dominios:
+
+a)	Vulnerabilidad demográfica
+
+-	Porcentaje de población de 75 años y más.
+
+-	Porcentaje de hogares unipersonales de mayores de 64 años.
+
+-	 Porcentaje de hogares con un adulto y un menor o más. 
+
+-	Porcentaje de población extranjera. Porcentaje de población extranjera infantil.
+
+b)	Vulnerabilidad de vivienda
+
+-	Porcentaje de viviendas con menos de 30 m².
+
+-	 Superficie media por habitante (m²). 
+
+-	Porcentaje de población en viviendas sin servicio o aseo. 
+
+-	Porcentaje de población en viviendas sin calefación. 
+
+-	Porcentaje viviendas en edificios anteriores a 1951. 
+
+-	Porcentaje de viviendas en alquiler o cesion.
+
+c)	Vulnerabilidad social (indicador MEDEA)
+
+-	Porcentaje de población en paro. 
+
+-	Porcentaje de asalariados eventuales. 
+
+-	Porcentaje de trabajadores manuales.
+
+-	Porcentaje de población sin estudios. 
+
+-	Porcentaje de población juvenil sin estudios.
+
+d)	Pobreza monetaria
+
+-	Porcentaje de población con ingresos por unidad de consumo por debajo de
+5.000 euros al año
+
+
+# Vulnerabilidad demográfica
+
+Para elaborar el indicador de vulnerabilidad demográfica se usa la técnica de análisis de componentes principales, se extrará la primera componente principal para reducir la dimensión de los indicadores en un solo índice.
+
+La prueba de esfericidad de Bartlett evalúa la aplicabilidad del análisis de componentes principales o factorial de las variables estudiadas. El modelo es significativo (aceptamos la hipótesis nula, H0) cuando se puede aplicar el análisis factorial:
+
+```{r}
+bartlett.sphere<-function(data){chi.square=-( (dim(data)[1]-1) - (2*dim(data)[2]-5)/6 )* log(det(cor(data,use='pairwise.complete.obs')));cat('chi.square value ', chi.square , ' on ', (dim(data)[2]^2-dim(data)[2])/2, ' degrees of freedom.' , ' p-value: ', 1-pchisq(chi.square,(dim(data)[2]^2-dim(data)[2])/2))}
+bartlett.sphere(data.frame(Demo[,2:6]))
+```
+
+El p-value rechaza la hipótesis nula de esfericidad, concluyendo que se puede hacer el análisis de Componentes Principales
+
+Calculo los componentes principales basados en la matriz de correlaciones 
+
+```{r}
+indicador.dem<-Demo[,2:5]
+indicador.dem[is.na(indicador.dem)]=0
+resultados.dem<-princomp(indicador.dem,cor=TRUE)
+summary(resultados.dem,loadings=TRUE)
+# Las puntuaciones se obtienen mediante la orden
+str(resultados.dem$scores[,1:1])
+```
+
+
+Creamos la base de datos con los resultados:
+
+```{r}
+codigos <- subset(indicadores[,1:6],cpro==39)
+indice_dem<-data.frame(codigos,Indice=resultados.dem$scores[,1:1])
+
+```
+
+
+La privación se representa mediante mapas de septiles (Figura 1) donde los colores verdes representan las áreas con menor privación y los tonos marrones las áreas con mayor privación.
+
+
+```{r}
+par(mar=c(1,1,1,1))
+Cortes <- cut2(indice_dem$Indice , g=7)
+valores<-as.numeric(Cortes)
+mypalette<-brewer.pal(7,"BrBG")
+mipaleta<-mypalette[length(mypalette):1]
+fgs<-mipaleta[valores]
+plot(Carto,col=fgs,border="grey",xlab="",ylab="",axes=F)
+title(expression(bold("Figura nº 1.- Privación Demográfica")), sub = "",cex.main =
+1.1,font.main= 1, col.main= "black")
+legend("bottomright", title="",legend=levels(Cortes),fill=mipaleta,
+y.intersp=0.8, cex= 1, bty="n",inset=0.05)
+write.csv(indice_dem, file="indice_dem.csv")
+
+
+```
+
+# Vulnerabilidad de vivienda
+
+Para elaborar el indicador de vulnerabilidad de vivienda se usa el análisis de componentes principales, con la extracción de la primera componente principal para reducir la dimensión de los indicadores en un solo índice.
+
+La prueba de esfericidad de Bartlett evalúa la aplicabilidad del análisis de componentes principales o factorial de las variables estudiadas. El modelo es significativo (aceptamos la hipótesis nula, H0) cuando se puede aplicar el análisis factorial:
+
+
+
+```{r}
+bartlett.sphere(data.frame(Vivienda[,2:7]))
+```
+
+El p-value rechaza la hipótesis nula de esfericidad, concluyendo que se puede hacer el análisis de Componentes Principales
+
+Calculo los componentes principales basados en la matriz de correlaciones 
+
+```{r}
+indicador.viv<-Vivienda[,2:7]
+indicador.viv[is.na(indicador.viv)]=0
+resultados.viv<-princomp(indicador.viv,cor=TRUE)
+summary(resultados.viv,loadings=TRUE)
+# Las puntuaciones se obtienen mediante la orden
+str(resultados.viv$scores[,1:1])
+```
+
+
+Creamos base de datos con los resultados de Cantabria:
+
+```{r}
+indice_v<-data.frame(codigos,Indice=resultados.viv$scores[,1:1])
+
+```
+
+
+La privación se representará mediante mapas de septiles (Figura 2) donde los colores verdes representan las áreas con menor privación y los tonos marrones las áreas con mayor privación.
+
+
+```{r}
+Privacion <-indice_v$Indice
+par(mar=c(1,1,1,1))
+Cortes <- cut2(Privacion , g=7)
+valores<-as.numeric(Cortes)
+mypalette<-brewer.pal(7,"BrBG")
+mipaleta<-mypalette[length(mypalette):1]
+fgs<-mipaleta[valores]
+plot(Carto,col=fgs,border="grey",xlab="",ylab="",axes=F)
+title(expression(bold("Figura nº 2.- Privación vivienda")), sub = "",cex.main =
+1.1,font.main= 1, col.main= "black")
+legend("bottomright", title="",legend=levels(Cortes),fill=mipaleta,
+y.intersp=0.8, cex= 1, bty="n",inset=0.05)
+write.csv(indice_v, file="indice_v.csv")
+```
+
+# Vulnerabilidad Sociolaboral
+
+
+El proyecto Mortalidad en áreas pequeñas Españolas y Desigualdades Socioeconómicas y Ambientales –MEDEA- es un proyecto de investigación coordinado de 15 grupos, que tiene por objetivo describir los patrones geográficos de mortalidad de diversas ciudades de España y relacionarlos con las características socioeconómicas y ambientales.
+
+En el contexto de los trabajos del grupo Medea se ha elaborado un índice de privación útil para el estudio de las desigualdades socioeconómicas en salud (Dominguez-Berjón et all, 2007).
+
+Las etapas seguidas en la construcción del indicador fueron las siguientes:
+
+1.	Identificación de los indicadores disponibles, asignándolos en nuestro marco conceptual a la dimensión correspondiente. Se valoraron inicialmente las variables censales que podían considerarse candidatas a detectar diferencias socioeconómicas y de privación en el sentido expuesto en la introducción, intentando proporcionar validez de contenido al futuro índice.
+
+2.	Estudio de las correlaciones entre los indicadores socioeconómicos y las RME según el sexo.
+
+3.	Análisis de las correlaciones entre los indicadores contemplados inicialmente para su posible inclusión en el índice y el análisis dimensional de éstos. Se usó el análisis de componentes principales, con la extracción de distintas componentes, para identificar las variables que podrían combinarse en un índice, estableciendo la estructura de correlaciones entre ellas. La interpretación de los factores se llevó a cabo sobre la solución rotada ortogonalmente según el método varimax.
+
+4.	Agregación de los indicadores seleccionados en el primer componente del análisis anterior mediante la extracción de un único eje por componentes principales.
+
+La construcción del índice de privación resulta de la combinación de los siguitentes indicadores:
+
+(1)	Porcentaje de población en paro.
+
+(2)	Porcentaje de asalariados 
+eventuales.
+
+(3)	Porcentaje de trabajadores manuals.
+
+(4)	Porcentaje de población con instrucción insuficiente.
+
+(5)	Porcentaje de población juvenil con instrucción insuficiente
+
+Obtenemos los datos de Cantabria de la base de datos utilizada en el proyecto MEDEA III, y se calcula el indicador.
+
+```{r}
+indicador.sd<-data.frame(indicadores[,1:6],IE01=indicadores[,7],IE03=indicadores[,9],IE04=indicadores[,10],IE06=indicadores[,11])
+indicador.sd[is.na(indicador.sd)]=0
+# seleccion resultados Cantabria
+indicador.sd <- subset(indicador.sd,cpro==39)
+# test de esfericidad de Barlett
+bartlett.sphere(data.frame(indicador.sd[,7:10]))
+# Calculo de los componentes principales
+resultados.sd<-princomp(indicador.sd[,7:10],cor=TRUE)
+summary(resultados.sd,loadings=TRUE)
+# Las puntuaciones se obtienen mediante la orden
+str(resultados.sd$scores[,1:1])
+```
+
+Se crea la base de datos con los resultados del indice:
+
+```{r}
+indice_sd=data.frame(indicador.sd[,1:6],Indice=resultados.sd$scores[,1])
+write.csv(indice_sd, file="indice_sd.csv")
+```
+
+La privación se representa mediante mapas de septiles (Figura 3) donde los colores verdes representan las áreas con menor privación y los tonos marrones las áreas con mayor privación.
+
+```{r}
+par(mar=c(1,1,1,1))
+indice=indice_sd$Indice
+Cortes <- cut2(indice , g=7)
+valores<-as.numeric(Cortes)
+mypalette<-brewer.pal(7,"BrBG")
+mipaleta<-mypalette[length(mypalette):1]
+fgs<-mipaleta[valores]
+plot(Carto,col=fgs,border="grey",xlab="",ylab="",axes=F)
+title(expression(bold("")), sub = "",cex.main = 1.1,font.main= 1,
+col.main= "black")
+title(expression(bold("Figura nº 3 Privacion sociolaboral")), sub = "",cex.main = 1.1,font.main= 1,
+col.main= "black")
+legend("bottomright", title="",legend=levels(Cortes),fill=mipaleta,
+y.intersp=0.8, cex= 1, bty="n",inset=0.05)
+```
+
+
+
+# Indicador de pobreza monetaria.
+
+Atlas de Distribución de Renta de los Hogares (ADRH) del INE, es un proyecto experimental, que se plantea la construcción de indicadores estadísticos de nivel y distribución de renta de los hogares a nivel municipal e inframunicipal, a partir del enlace de información del INE con datos tributarios, fundamentalmente de la AEAT, pero también conteniendo información de las Haciendas Forales.  
+
+El Atlas inclue información para las secciones censales de 2021 sobre la:
+
+− Renta bruta media por persona y por hogar
+
+− Distribución por fuentes de ingreso (en euros) para el ámbito territorial
+correspondiente. Se consideran cinco categorías: salario, pensiones,
+prestaciones de desempleo, otras prestaciones, otros ingresos.
+
+− Porcentaje de población con ingresos por unidad de consumo por debajo, o por
+encima, de determinados niveles de renta 
+− Indice de Gini y Distribución de la renta P80/P20 (cociente entre el percentil 80 y el percentil 20).
+
+Dado el objetivo de nuestra investigación se ha elegido como indicador de pobreza monetaria el Porcentaje de población con ingresos por unidad de consumo por debajo de
+5.000 euros al año (datos de 2015).
+
+No obstante, para adaptar la información publicada por el INE a las secciones censales de 2011, las que utiliza el ultomo censo de población. Se han tenido que hacer las siguientes correspondencias:
+
+SECCIONES 2021		SECCIONES 2011
+
+3900801006		3900801006
+
+3900801009		3900801006
+
+3901901002		3901901001
+
+3902301003		3902301003
+
+3902301005		3902301003
+
+3904601001		3904601002
+
+3905201002		3905201002
+
+3905201003		3905201003
+
+3905201006		3905201002
+
+3905201007		3905201003
+
+3905202001		3905202001
+
+3905202008		3905202001
+
+3907501009		3907501009
+
+3907501009		3907501011
+
+3907508001		3907508001
+
+3907508029		3907508001
+
+Por otro lados, hay que destacar que los datos publicadosd del Atlas, incluyen un nivel de secreto estadístico que afecta a varias secciones de Cantabria. En el caso de los indicadores relativos a la distribución de renta (población con ingresos por unidad de consumo por debajo de determinados umbrales), solo se publican para unidades territoriales (secciones, distritos, municipios) con, al menos 500 habitantes.
+
+En las secciones afectadas por dicho nivel de secreto estadístico, se ha realizado una imputación del dato faltante, utilizando como criterio el porcentaje de población correspondiente al vecino más próximo y con menor diferencia en renta disponible por habitante. 
+
+La privación se representa mediante mapas de septiles (Figura 4) donde los colores verdes representan las áreas con menor privación y los tonos marrones las áreas con mayor privación.
+
+```{r}
+indice_mon=data.frame(indicador.sd[,1:6],Indice=renta_pobr$X2011)
+par(mar=c(1,1,1,1))
+Cortes <- cut2(indice_mon$Indice, g=7)
+valores<-as.numeric(Cortes)
+mypalette<-brewer.pal(7,"BrBG")
+mipaleta<-mypalette[length(mypalette):1]
+fgs<-mipaleta[valores]
+plot(Carto,col=fgs,border="grey",xlab="",ylab="",axes=F)
+title(expression(bold("Figura 4 .-Privacion monetaria")), sub = "",cex.main = 1.1,font.main= 1,
+col.main= "black")
+legend("bottomright", title="",legend=levels(Cortes),fill=mipaleta,
+y.intersp=0.8, cex= 1, bty="n",inset=0.05)
+write.csv(indice_mon, file="indice_mon.csv")
+```
+
+
+
+
+
+# Indicador de privación de Cantabria
+
+Se realiza un analisis exploratorio de los distintos indicadores:
+
+```{r}
+indicador.can=data.frame(indicador.sd[,1:6],demografico=indice_dem$Indice,vivienda=indice_v$Indice,monetario=indice_mon$Indice,sociolaboral=indice_sd$Indice)
+
+library(skimr)
+skim(indicador.can[,7:10])
+
+library(funModeling)
+profiling_num(indicador.can[,7:10])
+plot_num(indicador.can[,7:10])
+
+# Estudio de las correlaciones
+
+library(corrplot)
+corrplot(cor(indicador.can[,7:10]), method="circle", type="upper", is.corr = TRUE, order = "hclust")
+
+```
+
+Para elaborar el índice de privación compuesto por las 4 dimensiones analizadas previamente, se usa también el análisis de componentes principales, con la extracción de la primera componente principal para reducir la dimensión de los indicadores en un solo índice.
+
+El p-value acepta la hipótesis nula, concluyendo que se puede hacer el análisis de Componentes Principales.
+
+
+
+```{r}
+bartlett.sphere(indicador.can[,7:10])
+```
+Calculo los componentes principales basados en la matriz de correlaciones:
+
+```{r}
+resultados.dem<-princomp(indicador.can[,7:10],cor=TRUE)
+summary(resultados.dem,loadings=TRUE)
+# Las puntuaciones se obtienen mediante la orden
+str(resultados.dem$scores[,1:1])
+```
+
+
+Creamos base de datos con los resultados: 
+
+```{r}
+indice_priv<-data.frame(CODIGO=Demo$COD.SECC,Indice=resultados.dem$scores[,1:1])
+
+```
+
+
+La privación se representará mediante mapas de septiles (Figura 5) donde los colores verdes representan las áreas con menor privación y los tonos marrones las áreas con mayor privación.
+
+
+```{r}
+par(mar=c(1,1,1,1))
+Cortes <- cut2(indice_priv$Indice , g=7)
+valores<-as.numeric(Cortes)
+mypalette<-brewer.pal(7,"BrBG")
+mipaleta<-mypalette[length(mypalette):1]
+fgs<-mipaleta[valores]
+plot(Carto,col=fgs,border="grey",xlab="",ylab="",axes=F)
+title(expression(bold("Figura nº5 Indice de Privación de Cantabria")), sub = "",cex.main =
+1.1,font.main= 1, col.main= "black")
+legend("bottomright", title="",legend=levels(Cortes),fill=mipaleta,
+y.intersp=0.8, cex= 1, bty="n",inset=0.05)
+write.csv(indice_priv, file="indice_priv.csv")
+
+
+```
+
+# Bilbiografia
+
+
+Dominguez-Berjón et all, 2008: Construcción de un índice de privación a partir de datos censales en grandes ciudades españolas (Proyecto MEDEA).Gac Sanit vol.22 no.3
+Barcelona may./jun. 2008
+
+Parra,F; Campo, L y Prieto, M.D. (2018): ÍNDICE DE PRIVACIÓN PARA ANALIZAR LAS DESIGUALDADES EN SALUD. XX JECAS, Logroño, La Rioja, 3-5 octubre 2018  
+
+
